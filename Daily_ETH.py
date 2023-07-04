@@ -1,29 +1,11 @@
 """
 Overview:
 
-This bot is a Mean Reversion Strategy Trading Bot version 1.0.
-Completion Date: June 23, 2023
+This bot is a Daily Mean Reversion Strategy Trading Bot version 1.1
+Start Date : July 5, 2023
 
-Scans the daily and minute 5 SMA
-Scans the minute 5 RSI
-Trades single coin and 1 open position for the entire trading session only
-Does not print specific details about the order
-Does not store the data to a file for analysis purposes
+Base on backtest from 7 pairs from 2019 - 2023, 3 coins can be traded
 
-Updates to be made:
-
-Print specific details for every order
-store data to a file for analysis purposes
-Fix the naming convention
-schedule the trade
-    Trade only during 2000H - 0800H
-    Close open positions at closing session
-    Include a scan for open positions at the initial run
-
-Trade atleast 5 coins
-Trade 2 open positions
-
-Initial Balance = $46.89
 """
 import ccxt
 import pandas as pd
@@ -31,7 +13,6 @@ import credentials
 import talib as ta
 import numpy as np
 import datetime
-from pytz import timezone
 import schedule
 import time
 import warnings
