@@ -16,6 +16,7 @@ import datetime
 import schedule
 import time
 import warnings
+import testnet
 
 warnings.filterwarnings('ignore')
 
@@ -23,12 +24,21 @@ leverage = 5
 marginMode = 'cross'
 in_position = False
 
+# exchange = ccxt.binanceusdm({
+#     'enableRateLimit': True,
+#     'apiKey': credentials.api_key,
+#     'secret': credentials.api_secret,
+#     'defaultType': 'future'
+# })
+
 exchange = ccxt.binanceusdm({
     'enableRateLimit': True,
-    'apiKey': credentials.api_key,
-    'secret': credentials.api_secret,
+    'apiKey': testnet.api_key,
+    'secret': testnet.api_secret,
     'defaultType': 'future'
 })
+
+exchange.set_sandbox_mode(True)
 
 def fetch_data(symbol, tf, limit):
 
@@ -53,60 +63,76 @@ def RSI(df, window=2):
 def update_data():
     global daily
 
-    # Fetch new data
-    daily = fetch_data('ETH/USDT', '1d', 201)
+    pairs = ['ETH/USDT', 'ADA/USDT', 'BNB/USDT']
 
-    # Calculate SMA
-    s_SMA(daily)
-    f_SMA(daily)
+    for pair in pairs:
 
-    # Calculate daily trend
-    daily['trend'] = daily.Close > daily.slow_SMA
-    daily['f_trend'] = daily.Close < daily.fast_SMA
+        daily = fetch_data(pair, '1d', 201)
 
-    # Calculate RSI
-    RSI(daily)
+        s_SMA(daily)
+        f_SMA(daily)
 
-    daily['oversold'] = daily.RSI < 10
-    daily['Buy'] = daily.trend & daily.f_trend & daily.oversold 
-    daily['Sell_1'] = (daily.Close.iloc[-1] > daily.fast_SMA.iloc[-1]) or (daily.Close.iloc[-1] < (daily.fast_sma.iloc[-1] * 1.10))
-    daily['Sell_2'] = (daily.Close.iloc[-1] > daily.Close.iloc[-2]) or (daily.Close.iloc[-1] < daily.trend.iloc[-1])
-    daily['Buy'] = daily.Buy.shift().fillna(False)
-    daily['Sell_1'] = daily['Sell_1'].shift().fillna(False)
-    daily['Sell_2'] = daily['Sell_2'].shift().fillna(False)
-    print(daily)
-    if daily.trend.iloc[-1] and daily.f_trend.iloc[-1]:
-        print(f'ETH/USDT {daily.Timestamp.iloc[-1]} - {daily.RSI.iloc[-1]}')
+        daily['trend'] = daily.Close > daily.slow_SMA
+        daily['f_trend'] = daily.Close < daily.fast_SMA
+
+        RSI(daily)
+
+        # Entry - if price is > 200SMA and < 5SMA and RSI2 < 10
+        # Exit  - if price > Entry[-2] or price < 200SMA or > 5SMA or price < (5SMA * 10%)
+   
+        daily['oversold'] = daily.RSI < 10
+        daily['Buy'] = daily.trend & daily.f_trend & daily.oversold 
+        daily['Sell'] = (daily.Close.iloc[-1] > daily.fast_SMA.iloc[-1]) or \
+                          (daily.Close.iloc[-1] < (daily.fast_SMA.iloc[-1] * 1.10)) or \
+                          (daily.Close.iloc[-1] > daily.Close.iloc[-2]) or \
+                          (daily.Close.iloc[-1] < daily.trend.iloc[-1])
+        daily['Buy'] = daily.Buy.shift().fillna(False)
+        daily['Sell'] = daily.Sell.shift().fillna(False)
+        if daily.trend.iloc[-1] and daily.f_trend.iloc[-1]:
+            print(f'{pair} {daily.Timestamp.iloc[-1]} - {daily.RSI.iloc[-1]}')
+        # else:
+        #     print(".", end="", flush=True)
+            # print(f'{pair} - {daily.Timestamp.iloc[-1]}')
 
 def buy_sell():
     global in_position
 
-    if not in_position and daily.Buy.iloc[-1]:
-        exchange.setLeverage(leverage=leverage, symbol='ETH/USDT')
-        exchange.setMarginMode(marginMode=marginMode, symbol='ETH/USDT')
-        ticker = exchange.fetchTicker('ETH/USDT')
-        ask_price = float(ticker['info']['lastPrice'])
-        balance = exchange.fetchBalance()['total']['USDT']
-        buy_quantity = (balance * leverage) / ask_price
-        buy = exchange.createMarketOrder('ETH/USDT', side='BUY', amount=buy_quantity)
-        print(buy)
-        in_position = True
+    pairs = ['ETH/USDT', 'ADA/USDT', 'BNB/USDT']
 
-    if in_position and (daily.Sell_1.iloc[-1] or daily.Sell_2.iloc[-1]):
-        pos = exchange.fetchPositions(symbols=['ETH/USDT'])
-        sell_qty = float(pos[-1]['info']['positionAmt'])
-        sell = exchange.createMarketOrder('ETH/USDT', side='SELL', amount=sell_qty)
-        print(sell)
-        in_position = False
+    for pair in pairs:
+
+        if not in_position and daily.Buy.iloc[-1]:
+            exchange.setLeverage(leverage=leverage, symbol=pair)
+            exchange.setMarginMode(marginMode=marginMode, symbol=pair)
+            ticker = exchange.fetchTicker(pair)
+            ask_price = float(ticker['info']['lastPrice'])
+            balance = exchange.fetchBalance()['total']['USDT']
+            buy_quantity = (balance * leverage) / ask_price
+            buy = exchange.createMarketOrder(pair, side='BUY', amount=buy_quantity)
+            print(buy)
+            in_position = True
+
+        if in_position and daily.Sell.iloc[-1]:
+            pos = exchange.fetchPositions(symbols=[pair])
+            sell_qty = float(pos[-1]['info']['positionAmt'])
+            sell = exchange.createMarketOrder(pair, side='SELL', amount=sell_qty)
+            print(sell)
+            in_position = False
 
 def scanPositions():
+
+    pairs = ['ETH/USDT', 'ADA/USDT', 'BNB/USDT']
+
+    for pair in pairs:
     
-    posi = pd.DataFrame(exchange.fetchPositions(symbols=['ETH/USDT']))
-    posi['Active'] = posi['entryPrice'] > 0
-    if posi.Active.iloc[-1]:
-        return
-    else:
-        pass
+        posi = pd.DataFrame(exchange.fetchPositions(symbols=[pair]))
+        posi['Active'] = posi['entryPrice'] > 0
+        active_count = (posi['Active'] == True).sum()
+        open_positions = active_count == 1
+        if open_positions:
+            in_position = True
+        else:
+            pass
 
 def MRB():
     scanPositions()
